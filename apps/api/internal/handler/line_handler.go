@@ -3,22 +3,14 @@ package handler
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"runtime/debug"
-	"strings"
-	"time"
-	"unicode"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/google/uuid"
 	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
 	"github.com/line/line-bot-sdk-go/v8/linebot/webhook"
 
-	"lotto-journal/api/internal/localization"
-	"lotto-journal/api/internal/models"
 	"lotto-journal/api/internal/repository"
 	"lotto-journal/api/internal/service"
 )
@@ -27,27 +19,42 @@ import (
 type LineHandler struct {
 	channelSecret   string
 	bot             *messaging_api.MessagingApiAPI
+	blobBot         *messaging_api.MessagingApiBlobAPI
 	userSvc         service.UserServiceInterface
 	ticketSvc       service.TicketServiceInterface
 	notificationSvc service.NotificationServiceInterface
 	webhookRepo     *repository.WebhookEventRepository
+	storageSvc      service.StorageServiceInterface
+	ocrSvc          service.OcrServiceInterface
+	ocrSessionSvc   service.OcrSessionServiceInterface
+	fileRepo        *repository.FileRepository
 }
 
 func NewLineHandler(
 	channelSecret string,
 	bot *messaging_api.MessagingApiAPI,
+	blobBot *messaging_api.MessagingApiBlobAPI,
 	userSvc service.UserServiceInterface,
 	ticketSvc service.TicketServiceInterface,
 	notificationSvc service.NotificationServiceInterface,
 	webhookRepo *repository.WebhookEventRepository,
+	storageSvc service.StorageServiceInterface,
+	ocrSvc service.OcrServiceInterface,
+	ocrSessionSvc service.OcrSessionServiceInterface,
+	fileRepo *repository.FileRepository,
 ) *LineHandler {
 	return &LineHandler{
 		channelSecret:   channelSecret,
 		bot:             bot,
+		blobBot:         blobBot,
 		userSvc:         userSvc,
 		ticketSvc:       ticketSvc,
 		notificationSvc: notificationSvc,
 		webhookRepo:     webhookRepo,
+		storageSvc:      storageSvc,
+		ocrSvc:          ocrSvc,
+		ocrSessionSvc:   ocrSessionSvc,
+		fileRepo:        fileRepo,
 	}
 }
 
@@ -89,459 +96,4 @@ func (h *LineHandler) Handle(c fiber.Ctx) error {
 	}
 
 	return c.SendStatus(fiber.StatusOK)
-}
-
-// dispatch deduplicates and routes a single LINE event to the appropriate handler.
-func (h *LineHandler) dispatch(event webhook.EventInterface) {
-	eventID := webhookEventID(event)
-	if eventID == "" {
-		// webhookEventID only extracts IDs for event types we support.
-		// Anything else (postback, join, leave, …) is unsupported and skipped.
-		log.Printf("[webhook] unsupported event type %T — skipping", event)
-		return
-	}
-
-	isNew, err := h.webhookRepo.MarkProcessed(eventID)
-	if err != nil {
-		log.Printf("[webhook] MarkProcessed %s: %v", eventID, err)
-		if replyToken := eventReplyToken(event); replyToken != "" {
-			h.replyMaintenance(replyToken)
-		}
-		return
-	}
-	if !isNew {
-		log.Printf("[webhook] duplicate event %s — skipping", eventID)
-		return
-	}
-
-	switch e := event.(type) {
-	case webhook.FollowEvent:
-		h.handleFollow(e)
-	case webhook.UnfollowEvent:
-		h.handleUnfollow(e)
-	case webhook.MessageEvent:
-		h.handleMessage(e)
-		// No default: unsupported types never reach here — webhookEventID returns "" for them.
-	}
-}
-
-// --- event handlers ---
-
-func (h *LineHandler) handleFollow(e webhook.FollowEvent) {
-	lineUserID := sourceUserID(e.Source)
-	if lineUserID == "" {
-		log.Println("[follow] no userId in source")
-		return
-	}
-
-	user, isNew, err := h.userSvc.FindOrCreate(lineUserID)
-	if err != nil {
-		log.Printf("[follow] FindOrCreate %s: %v", lineUserID, err)
-		h.replyMaintenance(e.ReplyToken)
-		return
-	}
-
-	var displayName string
-	var detectedLanguage string
-
-	profile, err := h.bot.GetProfile(lineUserID)
-	if err == nil && profile != nil {
-		displayName = strings.TrimSpace(profile.DisplayName)
-		detectedLanguage = strings.TrimSpace(profile.Language)
-	} else {
-		log.Printf("[profile] GetProfile %s: %v", lineUserID, err)
-	}
-
-	if isNew {
-		log.Printf("[follow] new user created: %s", lineUserID)
-		lang := "en"
-		if strings.ToLower(detectedLanguage) == "th" {
-			lang = "th"
-		}
-		user.Language = lang
-		if err := h.userSvc.UpdateLanguage(lineUserID, lang); err != nil {
-			log.Printf("[follow] UpdateLanguage %s to %s: %v", lineUserID, lang, err)
-		}
-	} else {
-		// User was previously inactive (unfollowed) — restore active status.
-		if err := h.userSvc.Reactivate(lineUserID); err != nil {
-			log.Printf("[follow] Reactivate %s: %v", lineUserID, err)
-		}
-		log.Printf("[follow] existing user re-followed: %s", lineUserID)
-	}
-
-	h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeWelcome, nil, buildWelcomeMessage(displayName, user.Language, isNew), localization.GetQuickReplies(user.Language))
-}
-
-func (h *LineHandler) handleUnfollow(e webhook.UnfollowEvent) {
-	lineUserID := sourceUserID(e.Source)
-	if lineUserID == "" {
-		log.Println("[unfollow] no userId in source")
-		return
-	}
-
-	if err := h.userSvc.Deactivate(lineUserID); err != nil {
-		log.Printf("[unfollow] Deactivate %s: %v", lineUserID, err)
-		return
-	}
-	log.Printf("[unfollow] user marked inactive: %s", lineUserID)
-	// No reply — LINE does not allow replying to unfollow events.
-}
-
-func (h *LineHandler) handleMessage(e webhook.MessageEvent) {
-	// Only handle plain text messages; ignore stickers, images, etc.
-	textMsg, ok := e.Message.(webhook.TextMessageContent)
-	if !ok {
-		log.Printf("[message] non-text content %T — ignoring", e.Message)
-		return
-	}
-
-	lineUserID := sourceUserID(e.Source)
-	if lineUserID == "" {
-		log.Println("[message] no userId in source")
-		return
-	}
-
-	// Best-effort loading indicator to show user we're processing the request.
-	// Delay the indicator slightly and cancel it for fast paths so users don't
-	// see a 5-second spinner for quick replies.
-	processingDone := make(chan struct{})
-	defer close(processingDone)
-	go func(chatID string, done <-chan struct{}) {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("[loading] panic recovered: %v\n%s", r, debug.Stack())
-			}
-		}()
-
-		timer := time.NewTimer(700 * time.Millisecond)
-		defer timer.Stop()
-
-		select {
-		case <-done:
-			return
-		case <-timer.C:
-			h.showLoading(chatID, 5)
-		}
-	}(lineUserID, processingDone)
-
-	// Ensure the user record exists (edge case: message before follow event).
-	user, isNew, err := h.userSvc.FindOrCreate(lineUserID)
-	if err != nil {
-		log.Printf("[message] FindOrCreate %s: %v", lineUserID, err)
-		h.replyMaintenance(e.ReplyToken)
-		return
-	}
-
-	if isNew {
-		log.Printf("[message] new user created: %s", lineUserID)
-		lang := "en"
-		profile, err := h.bot.GetProfile(lineUserID)
-		if err == nil && profile != nil {
-			if strings.ToLower(profile.Language) == "th" {
-				lang = "th"
-			}
-		}
-		user.Language = lang
-		if err := h.userSvc.UpdateLanguage(lineUserID, lang); err != nil {
-			log.Printf("[message] UpdateLanguage %s to %s: %v", lineUserID, lang, err)
-		}
-	}
-
-	msgText := textMsg.Text
-
-	if isThaiSwitchCmd(msgText) {
-		if err := h.userSvc.UpdateLanguage(lineUserID, "th"); err != nil {
-			log.Printf("[message] UpdateLanguage to th for %s: %v", lineUserID, err)
-			h.replyMaintenanceLocalized(e.ReplyToken, user.Language)
-			return
-		}
-		user.Language = "th"
-		dict := localization.GetDictionary("th")
-		h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeLanguageChanged, nil, dict.LanguageSwitched, localization.GetQuickReplies("th"))
-		return
-	}
-
-	if isEnglishSwitchCmd(msgText) {
-		if err := h.userSvc.UpdateLanguage(lineUserID, "en"); err != nil {
-			log.Printf("[message] UpdateLanguage to en for %s: %v", lineUserID, err)
-			h.replyMaintenanceLocalized(e.ReplyToken, user.Language)
-			return
-		}
-		user.Language = "en"
-		dict := localization.GetDictionary("en")
-		h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeLanguageChanged, nil, dict.LanguageSwitched, localization.GetQuickReplies("en"))
-		return
-	}
-
-	if isTicketListCmd(msgText) {
-		userTickets, drawDate, err := h.ticketSvc.ListTickets(user.ID)
-		if err != nil {
-			log.Printf("[message] error retrieving %s tickets: %v", user.ID, err)
-			h.replyMaintenanceLocalized(e.ReplyToken, user.Language)
-			return
-		}
-		var drawIDPtr *uuid.UUID
-		if len(userTickets) > 0 {
-			drawIDPtr = &userTickets[0].DrawID
-		}
-		h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeTicketList, drawIDPtr, buildTicketListReply(userTickets, drawDate, user.Language), localization.GetQuickReplies(user.Language))
-		return
-	}
-
-	if isAddHelpCmd(msgText) {
-		dict := localization.GetDictionary(user.Language)
-		h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeHelpAdd, nil, dict.AddHelp, localization.GetQuickReplies(user.Language))
-		return
-	}
-
-	if isNotifyHelpCmd(msgText) {
-		dict := localization.GetDictionary(user.Language)
-		h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeHelpNotify, nil, dict.NotifyHelp, localization.GetQuickReplies(user.Language))
-		return
-	}
-
-	// Default to parsing tickets
-	saved, invalid, drawID, err := h.ticketSvc.SubmitTickets(user.ID, msgText)
-	if err != nil {
-		log.Printf("[message] SubmitTickets for %s: %v", lineUserID, err)
-		h.replyMaintenanceLocalized(e.ReplyToken, user.Language)
-		return
-	}
-	var drawIDPtr *uuid.UUID
-	if drawID != uuid.Nil {
-		drawIDPtr = &drawID
-	}
-	h.replyAndLogTextWithQuickReplies(e.ReplyToken, user, models.NotifTypeTicketSubmitted, drawIDPtr, buildReply(saved, invalid, user.Language), localization.GetQuickReplies(user.Language))
-}
-
-// --- helpers ---
-
-func (h *LineHandler) replyText(replyToken, text string) {
-	if _, err := h.bot.ReplyMessage(&messaging_api.ReplyMessageRequest{
-		ReplyToken: replyToken,
-		Messages: []messaging_api.MessageInterface{
-			messaging_api.TextMessage{Text: text},
-		},
-	}); err != nil {
-		log.Printf("[reply] error: %v", err)
-	}
-}
-
-func (h *LineHandler) replyAndLogText(replyToken string, user *models.User, notifType models.NotificationType, drawID *uuid.UUID, text string) {
-	h.replyAndLogTextWithQuickReplies(replyToken, user, notifType, drawID, text, nil)
-}
-
-func (h *LineHandler) replyAndLogTextWithQuickReplies(replyToken string, user *models.User, notifType models.NotificationType, drawID *uuid.UUID, text string, quickReplies *messaging_api.QuickReply) {
-	var errStr *string
-	status := models.NotifStatusSuccess
-
-	msg := messaging_api.TextMessage{Text: text}
-	if quickReplies != nil {
-		msg.QuickReply = quickReplies
-	}
-
-	if _, err := h.bot.ReplyMessage(&messaging_api.ReplyMessageRequest{
-		ReplyToken: replyToken,
-		Messages: []messaging_api.MessageInterface{
-			msg,
-		},
-	}); err != nil {
-		status = models.NotifStatusFailed
-		errMsg := err.Error()
-		errStr = &errMsg
-		log.Printf("[reply] error: %v", err)
-	}
-
-	if user == nil {
-		log.Printf("[reply] cannot log notification: user is nil")
-		return
-	}
-
-	if logErr := h.notificationSvc.LogNotification(user.ID, user.LineUserID, notifType, drawID, status, errStr); logErr != nil {
-		log.Printf("[reply] failed to write notification log: %v", logErr)
-	}
-}
-
-func (h *LineHandler) getDisplayName(lineUserID string) string {
-	profile, err := h.bot.GetProfile(lineUserID)
-	if err != nil {
-		log.Printf("[profile] GetProfile %s: %v", lineUserID, err)
-		return ""
-	}
-	return strings.TrimSpace(profile.DisplayName)
-}
-
-func buildWelcomeMessage(displayName string, lang string, isNew bool) string {
-	dict := localization.GetDictionary(lang)
-	var greeting string
-	if displayName != "" {
-		greeting = fmt.Sprintf(dict.WelcomeGreetingPersonal, displayName)
-	} else {
-		greeting = dict.WelcomeGreetingGeneric
-	}
-
-	var template string
-	if isNew {
-		template = dict.WelcomeFirstTime
-	} else {
-		template = dict.WelcomeReturning
-	}
-
-	return greeting + "\n\n" + template
-}
-
-func (h *LineHandler) showLoading(chatID string, loadingSeconds int32) {
-	if chatID == "" {
-		return
-	}
-	if loadingSeconds < 5 {
-		loadingSeconds = 5
-	}
-	// LINE requires loadingSeconds to be in 5-second increments.
-	if rem := loadingSeconds % 5; rem != 0 {
-		loadingSeconds += 5 - rem
-	}
-	if loadingSeconds > 60 {
-		loadingSeconds = 60
-	}
-
-	if _, err := h.bot.ShowLoadingAnimation(&messaging_api.ShowLoadingAnimationRequest{
-		ChatId:         chatID,
-		LoadingSeconds: loadingSeconds,
-	}); err != nil {
-		log.Printf("[loading] error: %v", err)
-	}
-}
-
-// buildReply constructs the confirmation (or error) text for a ticket submission.
-func buildReply(saved []service.ParsedTicket, invalid []string, lang string) string {
-	dict := localization.GetDictionary(lang)
-	if len(saved) == 0 && len(invalid) == 0 {
-		return buildWelcomeMessage("", lang, true)
-	}
-
-	if len(saved) == 0 {
-		return fmt.Sprintf(dict.SubmitInvalid, strings.Join(invalid, ", "))
-	}
-
-	var ticketsListLines []string
-	for _, t := range saved {
-		if t.Quantity > 1 {
-			ticketsListLines = append(ticketsListLines, fmt.Sprintf("  • %s x%d (%s)", t.Number, t.Quantity, t.Type))
-		} else {
-			ticketsListLines = append(ticketsListLines, fmt.Sprintf("  • %s (%s)", t.Number, t.Type))
-		}
-	}
-	ticketsList := strings.Join(ticketsListLines, "\n")
-
-	if len(invalid) > 0 {
-		return fmt.Sprintf(dict.SubmitMixed, ticketsList, strings.Join(invalid, ", "))
-	}
-	return fmt.Sprintf(dict.SubmitConfirm, ticketsList)
-}
-
-// sourceUserID extracts the LINE userId from a SourceInterface.
-// Returns "" if the source is nil or is not a user source (e.g. group/room).
-func sourceUserID(src webhook.SourceInterface) string {
-	if src == nil {
-		return ""
-	}
-	if us, ok := src.(webhook.UserSource); ok {
-		return us.UserId
-	}
-	return ""
-}
-
-// Return if message sent is command for "List all tickets" or not.
-func isTicketListCmd(text string) bool {
-	normalized := normalizeCmd(text)
-	return normalized == "โพย" || normalized == "list" || normalized == "tickets"
-}
-
-func isThaiSwitchCmd(text string) bool {
-	normalized := normalizeCmd(text)
-	return normalized == "ไทย" || normalized == "thai"
-}
-
-func isEnglishSwitchCmd(text string) bool {
-	normalized := normalizeCmd(text)
-	return normalized == "english" || normalized == "en"
-}
-
-func isAddHelpCmd(text string) bool {
-	normalized := normalizeCmd(text)
-	return normalized == "เพิ่ม" || normalized == "add"
-}
-
-func isNotifyHelpCmd(text string) bool {
-	normalized := normalizeCmd(text)
-	return normalized == "แจ้งเตือน" || normalized == "notify"
-}
-
-func normalizeCmd(text string) string {
-	return strings.Map(func(r rune) rune {
-		switch {
-		case unicode.IsSpace(r):
-			return -1
-		case r == '\u200B' || r == '\u200C' || r == '\u200D' || r == '\uFEFF':
-			return -1
-		default:
-			return r
-		}
-	}, strings.ToLower(strings.TrimSpace(text)))
-}
-
-func buildTicketListReply(tickets []*models.Ticket, drawDate time.Time, lang string) string {
-	dict := localization.GetDictionary(lang)
-	if len(tickets) == 0 {
-		return dict.ListEmpty
-	}
-
-	dateStr := drawDate.Format("02/01/2006")
-	lines := []string{fmt.Sprintf(dict.ListHeader, dateStr)}
-
-	for _, t := range tickets {
-		if t.Quantity > 1 {
-			lines = append(lines, fmt.Sprintf("  • %s x%d (%s)", t.Number, t.Quantity, t.Type))
-		} else {
-			lines = append(lines, fmt.Sprintf("  • %s (%s)", t.Number, t.Type))
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-// webhookEventID extracts the webhookEventId from the event types we support.
-// Returns "" for all other types — dispatch will log and skip those.
-func webhookEventID(event webhook.EventInterface) string {
-	switch e := event.(type) {
-	case webhook.FollowEvent:
-		return e.WebhookEventId
-	case webhook.UnfollowEvent:
-		return e.WebhookEventId
-	case webhook.MessageEvent:
-		return e.WebhookEventId
-	default:
-		return ""
-	}
-}
-
-func (h *LineHandler) replyMaintenance(replyToken string) {
-	h.replyText(replyToken, localization.DbMaintenanceMessage)
-}
-
-func (h *LineHandler) replyMaintenanceLocalized(replyToken string, lang string) {
-	dict := localization.GetDictionary(lang)
-	h.replyText(replyToken, dict.DbMaintenance)
-}
-
-func eventReplyToken(event webhook.EventInterface) string {
-	switch e := event.(type) {
-	case webhook.FollowEvent:
-		return e.ReplyToken
-	case webhook.MessageEvent:
-		return e.ReplyToken
-	default:
-		return ""
-	}
 }

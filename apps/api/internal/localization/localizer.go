@@ -36,6 +36,21 @@ type Dictionary struct {
 	WelcomeGreetingGeneric  string
 	WelcomeGreetingPersonal string
 	DbMaintenance           string
+	OcrConfirmHeader        string
+	OcrWarningHeader        string
+	OcrConfirmSave          string
+	OcrEdit                 string
+	OcrCancel               string
+	OcrSaved                string
+	OcrCancelled            string
+	OcrEditInstruction      string
+	OcrPromptCorrection     string
+	OcrInvalidCorrection    string
+	OcrConflictWarning      string
+	OcrShowPending          string
+	OcrConfirmPending       string
+	OcrCancelPending        string
+	OcrBack                 string
 }
 
 var Dictionaries = map[Language]*Dictionary{
@@ -62,6 +77,21 @@ var Dictionaries = map[Language]*Dictionary{
 		WelcomeGreetingGeneric:  "👋 Hello!",
 		WelcomeGreetingPersonal: "👋 Hello %s!",
 		DbMaintenance:           "Sorry for the inconvenience. Our system database is temporarily undergoing maintenance. Please try again later.",
+		OcrConfirmHeader:        "We detected the following tickets in your photo. Are these correct? 🎟️\n%s",
+		OcrWarningHeader:        "\n\n⚠️ Warnings:\n%s",
+		OcrConfirmSave:          "Confirm & Save",
+		OcrEdit:                 "Edit Numbers",
+		OcrCancel:               "Cancel",
+		OcrSaved:                "Successfully saved tickets! ✅",
+		OcrCancelled:            "Registration cancelled. ❌",
+		OcrEditInstruction:      "Please select a ticket number to edit:",
+		OcrPromptCorrection:     "Please send the correct number and quantity for %s (e.g. 123456x2 or 123456).",
+		OcrInvalidCorrection:    "Invalid input. Please send a valid number (3 or 6 digits) and quantity (e.g. 123456x2 or just 123456).",
+		OcrConflictWarning:      "You already have a pending photo registration session. Please complete or cancel it before uploading a new photo.",
+		OcrShowPending:          "Show Pending",
+		OcrConfirmPending:       "Confirm Pending",
+		OcrCancelPending:        "Cancel Pending",
+		OcrBack:                 "Back",
 	},
 	TH: {
 		WelcomeFirstTime:        "🎟️ ยินดีต้อนรับสู่ Lotto Journal!\nพิมพ์เลขสลากที่คุณซื้อไว้เพื่อรอตรวจผลอัตโนมัติได้เลย\nตัวอย่าง: 123456 หรือ 456\nส่งหลายเลขได้ เช่น 123456 789012\nระบุจำนวนตั๋วด้วย x เช่น 123456x2\n\n📝 หากต้องการดูสลากที่บันทึกไว้ พิมพ์ 'โพย'\n\n(พิมพ์ `english` เพื่อเปลี่ยนเป็นภาษาอังกฤษ)",
@@ -86,6 +116,21 @@ var Dictionaries = map[Language]*Dictionary{
 		WelcomeGreetingGeneric:  "👋 สวัสดี!",
 		WelcomeGreetingPersonal: "👋 สวัสดีคุณ %s!",
 		DbMaintenance:           "ขออภัยในความไม่สะดวก ขณะนี้ระบบฐานข้อมูลอยู่ระหว่างการปรับปรุงชั่วคราว กรุณาลองใหม่อีกครั้งในภายหลัง",
+		OcrConfirmHeader:        "เราพบเลขสลากดังต่อไปนี้จากรูปภาพของคุณ ถูกต้องหรือไม่? 🎟️\n%s",
+		OcrWarningHeader:        "\n\n⚠️ ข้อควรระวัง:\n%s",
+		OcrConfirmSave:          "ยืนยันและบันทึก",
+		OcrEdit:                 "แก้ไขข้อมูล",
+		OcrCancel:               "ยกเลิก",
+		OcrSaved:                "บันทึกสลากเรียบร้อยแล้ว! ✅",
+		OcrCancelled:            "ยกเลิกการบันทึกสลากแล้ว ❌",
+		OcrEditInstruction:      "กรุณาเลือกเลขที่ต้องการแก้ไข:",
+		OcrPromptCorrection:     "กรุณาส่งเลขและจำนวนที่ถูกต้องสำหรับ %s (เช่น 123456x2 หรือ 123456)",
+		OcrInvalidCorrection:    "รูปแบบไม่ถูกต้อง กรุณาส่งเลขที่ถูกต้อง (3 หรือ 6 หลัก) พร้อมจำนวน (เช่น 123456x2 หรือ 123456)",
+		OcrConflictWarning:      "คุณมีรายการบันทึกสลากจากรูปภาพที่ค้างอยู่ กรุณายืนยันหรือยกเลิกรายการเดิมก่อนส่งรูปภาพใหม่",
+		OcrShowPending:          "ดูสลากเดิม",
+		OcrConfirmPending:       "ยืนยันสลากเดิม",
+		OcrCancelPending:        "ยกเลิกสลากเดิม",
+		OcrBack:                 "ย้อนกลับ",
 	},
 }
 
@@ -232,5 +277,38 @@ func GetPrizeName(category string, lang string) string {
 		return "Special Prize (Jackpot)"
 	default:
 		return category
+	}
+}
+
+func GetOcrWarningMessage(warning string, lang string) string {
+	if strings.ToLower(lang) == "th" {
+		switch warning {
+		case "image_blurry":
+			return "รูปภาพดูเบลอเล็กน้อย"
+		case "number_partially_hidden":
+			return "เลขบางส่วนอาจถูกบังหรือหลุดขอบรูปภาพ"
+		case "multiple_tickets_detected":
+			return "ตรวจพบสลากหลายใบ (แนะนำไม่เกิน 5 ใบต่อรูป)"
+		case "low_confidence":
+			return "ความแม่นยำต่ำ: เลขบางหลักอาจไม่ถูกต้อง"
+		case "not_lottery_ticket":
+			return "รูปภาพนี้ดูไม่เหมือนสลากกินแบ่งรัฐบาล"
+		default:
+			return warning
+		}
+	}
+	switch warning {
+	case "image_blurry":
+		return "The photo seems blurry."
+	case "number_partially_hidden":
+		return "Some numbers might be partially covered or cropped."
+	case "multiple_tickets_detected":
+		return "Multiple tickets detected (recommend <= 5 per photo)."
+	case "low_confidence":
+		return "Low confidence: Some digits might be incorrect."
+	case "not_lottery_ticket":
+		return "This does not look like a Thai Government Lottery ticket."
+	default:
+		return warning
 	}
 }

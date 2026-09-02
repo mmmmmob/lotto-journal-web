@@ -28,7 +28,7 @@ _(Updated when milestones close — never archived)_
 
 ### 2026-07-24 — Session 19 — [Antigravity]
 
-- **Session summary:** T-024 completed. Optimised database connection pooling and Fly.io VM scaling settings to allow full scale-to-zero (sleep) for the serverless Neon Postgres database and Fly compute. Migrated cron schedules from in-process timers to secure HTTP endpoints triggered via GitHub Actions.
+- **Session summary:** T-024 completed. Optimised database connection pooling and Fly.io VM scaling settings to allow full scale-to-zero (sleep) for the serverless Neon Postgres database and Fly compute. Migrated cron schedules from in-process timers to secure HTTP endpoints triggered via GitHub Actions. Configured custom domain and Cloudflare edge WAF / Rate Limiter rules to prevent unauthorized VM wake-ups.
 - **Work done:**
   - Modified `apps/api/internal/database/db.go` to set `MaxIdleConns(0)`, `MaxOpenConns(5)`, and `ConnMaxLifetime(3 * time.Minute)`.
   - Added `CRON_SECRET` variable in `config.go` and documented in `.env.example` (both root and api).
@@ -38,13 +38,17 @@ _(Updated when milestones close — never archived)_
   - Updated `main.go` to run a one-off startup schedule sync in development instead of a running background scheduler thread.
   - Modified `fly.toml` to set `min_machines_running = 0` and comment out the periodic health checks.
   - Created two GitHub Actions workflows (`cron-sync-schedule.yml` and `cron-verify-results.yml`) with secure environment secrets passing to trigger endpoints on Bangkok time (ICT).
-  - Added unit tests in `job_handler_test.go` verifying the token authorization middleware logic, all tests passing.
-  - Documented architectural decisions in `doc/07-decisions/ADR-002-serverless-db-scale-to-zero.md` and updated route details in `apps/api/README.md` and root `README.md`.
+  - Added unit tests in `job_handler_test.go` and `health_handler_test.go` verifying authorization and health status codes/errors, all tests passing.
+  - Configured custom domain `lotto-journal.theppitak.work` on Fly.io using Cloudflare DNS.
+  - Deployed Cloudflare Custom WAF rule targeting `lotto-journal.theppitak.work/jobs/*` to block requests not carrying the matching `Bearer` token before they can trigger Fly.io VM wake-ups.
+  - Deployed Cloudflare Rate Limiting rule targeting `lotto-journal.theppitak.work/health` (5 requests / 10 seconds per IP, blocked for 10 seconds) to prevent scraper/pinger spam from waking the VM.
 - **Validation evidence:**
-  - `go test -v ./internal/handler/...` runs and passes successfully.
+  - `go test ./...` runs and passes successfully.
+  * Tested WAF rule: unauthenticated requests to `/jobs/*` return `403 Forbidden` from Cloudflare without waking the VM.
+  * Tested Rate Limiting: sending 6 requests to `/health` within 10 seconds triggers the limit, returning `429 Too Many Requests` at the edge.
 - **Tasks changed:**
   - T-024: done
-- **Next priority:** none (Awaiting deployment and PR review)
+- **Next priority:** none (All implementation, deployment, and edge protection configurations are fully verified)
 
 ---
 

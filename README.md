@@ -2,7 +2,7 @@
 
 A LINE chatbot service that lets Thai lottery players record their ticket numbers and get automatically notified via LINE when any of their tickets win a prize.
 
-Try it out: https://lin.ee/oZPTXQW or add `@249lytsb` on LINE
+Try it out: <https://lin.ee/oZPTXQW> or add `@249lytsb` on LINE
 
 **Stack:** Go + Fiber · PostgreSQL · LINE Messaging API
 
@@ -12,15 +12,15 @@ Try it out: https://lin.ee/oZPTXQW or add `@249lytsb` on LINE
 
 All interaction happens inside the LINE chat with the bot.
 
-| Message sent         | What happens                                                              |
-| -------------------- | ------------------------------------------------------------------------- |
-| `123456`             | Records one L6 ticket for the upcoming draw                               |
-| `456`                | Records one N3 ticket for the upcoming draw                               |
-| `123456 x3`          | Records 3 copies of the same L6 ticket                                    |
-| `123456, 789012`     | Records two tickets in one message (comma or space separated)             |
-| `โพย`               | Lists all tickets you have registered for the current upcoming draw       |
-| Follow bot           | Creates your account; sends welcome message                               |
-| Unfollow bot         | Marks your account inactive; ticket history is preserved                  |
+| Message sent     | What happens                                                        |
+| ---------------- | ------------------------------------------------------------------- |
+| `123456`         | Records one L6 ticket for the upcoming draw                         |
+| `456`            | Records one N3 ticket for the upcoming draw                         |
+| `123456 x3`      | Records 3 copies of the same L6 ticket                              |
+| `123456, 789012` | Records two tickets in one message (comma or space separated)       |
+| `โพย`            | Lists all tickets you have registered for the current upcoming draw |
+| Follow bot       | Creates your account; sends welcome message                         |
+| Unfollow bot     | Marks your account inactive; ticket history is preserved            |
 
 ---
 
@@ -49,21 +49,33 @@ cp .env.example .env.local
 
 Key variables:
 
-| Variable                    | Used by        | Example value                                                                   |
-| --------------------------- | -------------- | ------------------------------------------------------------------------------- |
-| `DB_USERNAME`               | docker-compose | `postgres`                                                                      |
-| `DB_PASSWORD`               | docker-compose | `yourpassword`                                                                  |
-| `DB_NAME`                   | docker-compose | `lotto_journal`                                                                 |
-| `DB_DSN`                    | Go app         | `postgres://postgres:yourpassword@localhost:5432/lotto_journal?sslmode=disable` |
-| `DB_MAX_IDLE_CONNS`         | Go app         | Maximum idle connections in pool (default: `0`). *Keep at 0 for serverless databases (Neon) to close idle links immediately.* |
-| `DB_MAX_OPEN_CONNS`         | Go app         | Maximum open connections in pool (default: `5`). |
-| `DB_CONN_MAX_LIFETIME`      | Go app         | Maximum lifetime duration of a connection (default: `"3m"`). |
-| `DB_CONN_MAX_IDLE_TIME`      | Go app         | Maximum idle duration of a connection before closure (default: `"1m"`). *Highly recommended for scale-to-zero databases.* |
-| `PORT`                      | Go app         | `:3000`                                                                         |
-| `LINE_CHANNEL_SECRET`       | Go app         | from LINE Developers console → Basic Settings                                   |
-| `LINE_CHANNEL_ACCESS_TOKEN` | Go app         | from LINE Developers console → Messaging API                                    |
-| `APP_ENV`                   | Go app         | App environment: `development`, `staging`, `production` (default: `development`) |
+| Variable                    | Used by        | Example value                                                                                                                                                                                                              |
+| --------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DB_USERNAME`               | docker-compose | `postgres`                                                                                                                                                                                                                 |
+| `DB_PASSWORD`               | docker-compose | `yourpassword`                                                                                                                                                                                                             |
+| `DB_NAME`                   | docker-compose | `lotto_journal`                                                                                                                                                                                                            |
+| `DB_DSN`                    | Go app         | `postgres://postgres:yourpassword@localhost:5432/lotto_journal?sslmode=disable`                                                                                                                                            |
+| `DB_MAX_IDLE_CONNS`         | Go app         | Maximum idle connections in pool (default: `0`). _Keep at 0 for serverless databases (Neon) to close idle links immediately._                                                                                              |
+| `DB_MAX_OPEN_CONNS`         | Go app         | Maximum open connections in pool (default: `5`).                                                                                                                                                                           |
+| `DB_CONN_MAX_LIFETIME`      | Go app         | Maximum lifetime duration of a connection (default: `"3m"`).                                                                                                                                                               |
+| `DB_CONN_MAX_IDLE_TIME`     | Go app         | Maximum idle duration of a connection before closure (default: `"1m"`). _Highly recommended for scale-to-zero databases._                                                                                                  |
+| `PORT`                      | Go app         | `:3000`                                                                                                                                                                                                                    |
+| `LINE_CHANNEL_SECRET`       | Go app         | from LINE Developers console → Basic Settings                                                                                                                                                                              |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Go app         | from LINE Developers console → Messaging API                                                                                                                                                                               |
+| `APP_ENV`                   | Go app         | App environment: `development`, `staging`, `production` (default: `development`)                                                                                                                                           |
 | `CRON_SECRET`               | Go app         | Secret token used to authenticate request triggers for scheduled jobs. Default is empty (disabled) in application config, but is set to `"local-cron-secret-change-me"` in `.env.example` templates for local development. |
+| `R2_ACCOUNT_ID`             | Go app         | Cloudflare Account ID for ticket image storage                                                                                                                                                                             |
+| `R2_ACCESS_KEY_ID`          | Go app         | Cloudflare R2 Access Key ID                                                                                                                                                                                                |
+| `R2_SECRET_ACCESS_KEY`      | Go app         | Cloudflare R2 Secret Access Key                                                                                                                                                                                            |
+| `R2_BUCKET_NAME`            | Go app         | Cloudflare R2 Bucket Name                                                                                                                                                                                                  |
+| `R2_PUBLIC_URL_PREFIX`      | Go app         | Public domain prefix for bucket assets (e.g. `https://pub-yourdomain.r2.dev`)                                                                                                                                              |
+| `OPENAI_API_KEY`            | Go app         | API Key for gpt-4o-mini Vision OCR Structured Outputs                                                                                                                                                                      |
+
+> [!TIP]
+> **Environment File Resolution:**
+>
+> - **Centralized Configuration**: The root `.env.local` is the primary environment config file. Tooling (e.g. `pnpm dev`, `docker-compose`) and package Makefiles automatically load and export this file when run from the monorepo root.
+> - **Isolated Configuration**: If running/debugging the Go API directly from inside `apps/api/` (outside the Makefile or root tooling context), the app looks for `apps/api/.env`. You can copy `apps/api/.env.example` to `apps/api/.env` for this setup.
 
 ### 2. Start the database (Optional)
 
@@ -147,8 +159,9 @@ curl -i https://lotto-journal-api.fly.dev/health
 ```
 
 > [!NOTE]
-> * Since we want the VM to scale-to-zero (sleep) when idle, active periodic health checks are commented out in `fly.toml`.
-> * The first request (like the `curl` above) will trigger a VM cold start, booting the VM back up (which takes 2–4 seconds). Subsequent requests will respond instantly.
+>
+> - Since we want the VM to scale-to-zero (sleep) when idle, active periodic health checks are commented out in `fly.toml`.
+> - The first request (like the `curl` above) will trigger a VM cold start, booting the VM back up (which takes 2–4 seconds). Subsequent requests will respond instantly.
 
 ### 6. Configure LINE production webhook
 
@@ -165,15 +178,17 @@ In LINE Developers Console (production channel):
 
 ### Runtime env map (production)
 
-| Key                         | Where it lives       | Notes                                                          |
-| --------------------------- | -------------------- | -------------------------------------------------------------- |
-| `DB_DSN`                    | Fly secrets          | Neon connection string (`sslmode=require`)                     |
-| `LINE_CHANNEL_SECRET`       | Fly secrets          | Production channel secret                                      |
-| `LINE_CHANNEL_ACCESS_TOKEN` | Fly secrets          | Production channel access token                                |
-| `CRON_SECRET`               | Fly secrets          | Secret token used to authorize GitHub Actions cron trigger requests |
-| `APP_ENV`                   | `fly.toml` `[env]`   | Non-secret (`production`)                                      |
-| `PORT`                      | `fly.toml` `[env]`   | Non-secret (`:8080`)                                           |
-| `FLY_API_TOKEN`             | GitHub Actions secret | Used only by CI/CD deploy workflow (not app runtime)           |
+| Key                         | Where it lives        | Notes                                                                |
+| --------------------------- | --------------------- | -------------------------------------------------------------------- |
+| `DB_DSN`                    | Fly secrets           | Neon connection string (`sslmode=require`)                           |
+| `LINE_CHANNEL_SECRET`       | Fly secrets           | Production channel secret                                            |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Fly secrets           | Production channel access token                                      |
+| `CRON_SECRET`               | Fly secrets           | Secret token used to authorize GitHub Actions cron trigger requests  |
+| `APP_ENV`                   | `fly.toml` `[env]`    | Non-secret (`production`)                                            |
+| `PORT`                      | `fly.toml` `[env]`    | Non-secret (`:8080`)                                                 |
+| `CRON_SYNC_SCHEDULE`        | `fly.toml` `[env]`    | Optional: Cron spec for draw sync (default: `"0 3 * * *"`)           |
+| `CRON_VERIFY_SCHEDULE`      | `fly.toml` `[env]`    | Optional: Cron spec for results check (default: `"*/5 16-23 * * *"`) |
+| `FLY_API_TOKEN`             | GitHub Actions secret | Used only by CI/CD deploy workflow (not app runtime)                 |
 
 > Current production config supports **autoscaling to zero (sleep)** in primary region `sin` when there is no traffic. When active, it manages connection pooling aggressively to avoid compute leaks in Neon DB.
 
@@ -228,11 +243,14 @@ The `endpoint_url` in the dev environment points to `http://localhost:3000` by d
 Every webhook request has a pre-request script that automatically computes the `X-Line-Signature` header before sending:
 
 ```js
-const crypto = require('crypto');
-const secret = bru.getEnvVar('line_channel_secret');
+const crypto = require("crypto");
+const secret = bru.getEnvVar("line_channel_secret");
 const body = JSON.stringify(req.body);
-const signature = crypto.createHmac('sha256', secret).update(body).digest('base64');
-req.setHeader('X-Line-Signature', signature);
+const signature = crypto
+  .createHmac("sha256", secret)
+  .update(body)
+  .digest("base64");
+req.setHeader("X-Line-Signature", signature);
 ```
 
 You don't need to compute the signature manually — just send the request.
@@ -261,13 +279,13 @@ All `make` commands run from `apps/api/` — the `pnpm` shortcuts above call the
 
 ### App
 
-| pnpm (root)    | make (apps/api) | What it does                               |
-| -------------- | --------------- | ------------------------------------------ |
-| `pnpm dev`     | `make run`      | Start API with hot reload (air)            |
-| `pnpm build`   | `make build`    | Build binary to `dist/`                    |
-| —              | `make clean`    | Remove `tmp/` and `dist/`                  |
+| pnpm (root)    | make (apps/api) | What it does                              |
+| -------------- | --------------- | ----------------------------------------- |
+| `pnpm dev`     | `make run`      | Start API with hot reload (air)           |
+| `pnpm build`   | `make build`    | Build binary to `dist/`                   |
+| —              | `make clean`    | Remove `tmp/` and `dist/`                 |
 | `pnpm swagger` | `make swagger`  | Generate Swagger spec files under `docs/` |
-| `pnpm mock`    | `make mock`     | Generate Interface mocks under `mocks/`    |
+| `pnpm mock`    | `make mock`     | Generate Interface mocks under `mocks/`   |
 
 ### Database
 
@@ -289,12 +307,13 @@ All `make` commands run from `apps/api/` — the `pnpm` shortcuts above call the
 
 ### Migration history
 
-| Version | File                            | Description                                                                                      |
-| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 000001  | `000001_init_schema`            | Initial schema — all tables, enums, indexes                                                      |
-| 000002  | `000002_line_identity`          | LINE identity redesign — replace email/password with `line_user_id`; rename `N6→L6`, `n6_*→l6_*` |
-| 000003  | `000003_webhook_events`         | Idempotency table — store processed LINE `webhookEventId` values (ON CONFLICT DO NOTHING)        |
-| 000004  | `000004_widen_winning_number`   | Widen `draw_results.winning_number` to `varchar(12)` for N3 Jackpot                              |
-| 000005  | `000005_notification_logs`      | Notification logs — table for auditing outgoing push/reply messages                              |
-| 000006  | `000006_user_language`          | Add language setting preference column (defaults to `'en'`) to the `users` table                 |
+| Version | File                            | Description                                                                                             |
+| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 000001  | `000001_init_schema`            | Initial schema — all tables, enums, indexes                                                             |
+| 000002  | `000002_line_identity`          | LINE identity redesign — replace email/password with `line_user_id`; rename `N6→L6`, `n6_*→l6_*`        |
+| 000003  | `000003_webhook_events`         | Idempotency table — store processed LINE `webhookEventId` values (ON CONFLICT DO NOTHING)               |
+| 000004  | `000004_widen_winning_number`   | Widen `draw_results.winning_number` to `varchar(12)` for N3 Jackpot                                     |
+| 000005  | `000005_notification_logs`      | Notification logs — table for auditing outgoing push/reply messages                                     |
+| 000006  | `000006_user_language`          | Add language setting preference column (defaults to `'en'`) to the `users` table                        |
 | 000007  | `000007_add_notification_types` | Add new notification type enum values (`language_changed`, `help_add`, `help_notify`) to audit log enum |
+| 000008  | `000008_ocr_fields_and_renames` | Add OCR sessions table, pending file associations, and R2 metadata fields                               |

@@ -9,6 +9,7 @@ primary_region = "sin"
 [env]
   APP_ENV = "production"
   PORT = ":8080"
+  R2_PUBLIC_URL_PREFIX = "https://lotto-cdn.theppitak.work"
 
 [deploy]
   release_command = "sh -c 'exec /app/migrate -path /app/migrations -database \"$DB_DSN\" up'"
@@ -18,7 +19,7 @@ primary_region = "sin"
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
   processes = ["app"]
 
   # [[http_service.checks]]

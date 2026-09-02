@@ -47,3 +47,17 @@ type UserWinningRepositoryInterface interface {
 	DeleteByDrawIDInTransaction(tx *gorm.DB, drawID uuid.UUID) error
 	FindDrawWinnings(drawID uuid.UUID) ([]DrawWinningDetail, error)
 }
+
+type FileRepositoryInterface interface {
+	Create(file *models.File) error
+	FindByID(id uuid.UUID) (*models.File, error)
+	Update(file *models.File) error
+}
+
+type OcrSessionRepositoryInterface interface {
+	Create(session *models.OcrSession) error
+	FindByID(id uuid.UUID) (*models.OcrSession, error)
+	FindPendingByUserID(userID uuid.UUID) (*models.OcrSession, error)
+	Update(session *models.OcrSession) error
+	DeleteExpiredPendingByUserID(userID uuid.UUID) error
+}

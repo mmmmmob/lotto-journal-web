@@ -36,7 +36,7 @@ Last updated: 2026-07-24
 
 **Current phase:** M4 — Hardening / Post-MVP (T-024 Complete)
 
-With **T-024** complete, the API database connection pool is optimized for scale-to-zero (Neon DB), the internal scheduler is migrated to scheduled GitHub Actions workflows, and job endpoints are secured with precomputed SHA-256 token authorization checks. 
+With **T-024** complete, the API database connection pool is optimized for scale-to-zero (Neon DB), the internal scheduler is migrated to scheduled GitHub Actions workflows, and job endpoints are secured with precomputed SHA-256 token authorization checks. Additionally, the custom domain `lotto-journal.theppitak.work` has been successfully set up on Fly.io via Cloudflare, with active Edge WAF rules (unauthorized jobs blocker) and Rate Limiting active and verified in production to prevent VM wake-up abuse.
 
 Historically, **T-021** (Multi-language & Localization support) and **T-022** (LINE Win Notification) are completed, allowing users to receive localized win/loss notifications shortly after a draw is verified in `ResultService`, with full transaction logs audited in the `notification_logs` table.
 

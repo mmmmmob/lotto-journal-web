@@ -59,6 +59,11 @@ func main() {
 		log.Fatalf("Failed to create LINE bot client: %v", err)
 	}
 
+	blobBot, err := messaging_api.NewMessagingApiBlobAPI(cfg.LineChannelAccessToken)
+	if err != nil {
+		log.Fatalf("Failed to create LINE bot blob client: %v", err)
+	}
+
 	// GLO Lottery client
 	lotteryClient := client.NewLotteryClient("")
 
@@ -69,6 +74,8 @@ func main() {
 	webhookRepo := repository.NewWebhookEventRepository(db)
 	drawResultRepo := repository.NewDrawResultRepository(db)
 	winningRepo := repository.NewUserWinningRepository(db)
+	fileRepo := repository.NewFileRepository(db)
+	ocrSessionRepo := repository.NewOcrSessionRepository(db)
 
 	// Services
 	userSvc := service.NewUserService(userRepo)
@@ -76,6 +83,13 @@ func main() {
 	ticketSvc := service.NewTicketService(ticketRepo, drawRepo, drawSvc)
 	notificationSvc := service.NewNotificationService(db, bot, ticketRepo, winningRepo, drawResultRepo)
 	resultSvc := service.NewResultService(db, lotteryClient, drawRepo, drawResultRepo, ticketRepo, winningRepo, notificationSvc)
+
+	storageSvc, err := service.NewStorageService(cfg.R2AccountID, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2BucketName)
+	if err != nil {
+		log.Fatalf("failed to initialize R2 storage service: %v", err)
+	}
+	ocrSvc := service.NewOcrService(cfg.OpenAIAPIKey)
+	ocrSessionSvc := service.NewOcrSessionService(ocrSessionRepo, ticketRepo, drawSvc)
 
 	// Start startup draw schedule sync (only in development/non-production for convenience)
 	if cfg.APP_ENV != "production" {
@@ -95,10 +109,15 @@ func main() {
 	lineHandler := handler.NewLineHandler(
 		cfg.LineChannelSecret,
 		bot,
+		blobBot,
 		userSvc,
 		ticketSvc,
 		notificationSvc,
 		webhookRepo,
+		storageSvc,
+		ocrSvc,
+		ocrSessionSvc,
+		fileRepo,
 	)
 
 	// Fiber app

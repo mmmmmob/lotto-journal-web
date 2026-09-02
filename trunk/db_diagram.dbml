@@ -1,6 +1,6 @@
 // * explanations can be found at https://dbdocs.io/theppitak.m/Lotto-Journal
-// * schema version: post-migration 000007 (target state)
-// * ground truth for current DB state: apps/api/migrations/ (all 000001–000007)
+// * schema version: post-migration 000008 (target state)
+// * ground truth for current DB state: apps/api/migrations/ (all 000001–000008)
 
 // USERS
 Table users {
@@ -22,8 +22,11 @@ Table webhook_events {
 Table files {
   id uuid [pk, default: `gen_random_uuid()`]
   owner_id uuid [ref: > users.id]
-  file_path varchar [unique, not null]
+  storage_key varchar [unique, not null]
   file_type varchar
+  extraction_status varchar
+  extraction_model varchar
+  extracted_response jsonb
   created_at timestamp [default: `now()`]
 }
 
@@ -35,10 +38,28 @@ Table tickets {
   type lottery_type
   number varchar(6)
   quantity int4 [default: 1]
-  tickets_file_id uuid [ref: - files.id, null]
+  ticket_file_id uuid [ref: - files.id, null]
   is_checked boolean [default: false]
   created_at timestamp [default: `now()`]
   updated_at timestamp [default: `now()`]
+}
+
+// OCR CONFIGURATION/CONFIRMATION SESSIONS
+Table ocr_sessions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [not null, ref: > users.id]
+  file_id uuid [ref: > files.id, null]
+  tickets jsonb [not null]
+  warnings jsonb [not null]
+  current_edit_number varchar(6) [null]
+  status varchar [not null, default: 'pending']
+  expires_at timestamp [not null]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    user_id [name: "uidx_ocr_sessions_user_pending", unique, note: "partial unique index where status = 'pending'"]
+  }
 }
 
 Table draws {

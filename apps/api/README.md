@@ -101,7 +101,7 @@ apps/api/
 │   ├── client/              # GLO API client
 │   ├── config/              # Env config loader
 │   ├── database/            # DB connection
-│   ├── handler/             # HTTP handlers
+│   ├── handler/             # HTTP handlers (split into line_handler*.go for modularity)
 │   ├── mocks/               # Generated mockery files
 │   ├── models/              # GORM models
 │   ├── repository/          # DB access layer
@@ -137,3 +137,4 @@ apps/api/
 | 000005  | `000005_notification_logs`      | Notification logs — table for auditing outgoing push/reply messages                              |
 | 000006  | `000006_user_language`          | Add language setting preference column (defaults to `'en'`) to the `users` table                 |
 | 000007  | `000007_add_notification_types` | Add new notification type enum values (`language_changed`, `help_add`, `help_notify`) to audit log enum |
+| 000008  | `000008_ocr_fields_and_renames` | Add OCR sessions table, pending file associations, and R2 metadata fields                        |
