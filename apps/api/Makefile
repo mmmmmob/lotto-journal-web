@@ -2,6 +2,12 @@
 -include ../../.env.local
 export
 
+DOCKER_BIN := $(shell command -v docker 2>/dev/null)
+
+ifeq ($(strip $(DOCKER_BIN)),)
+DOCKER_BIN := $(HOME)/.docker/bin/docker
+endif
+
 MIGRATION_PATH := ./migrations
 DB_URL         := postgres://$(DB_USERNAME):$(DB_PASSWORD)@localhost:5432/$(DB_NAME)?sslmode=disable
 
@@ -24,15 +30,15 @@ clean:
 .PHONY: db-start db-stop
 
 db-start:
-	@docker compose --env-file ../../.env.local -f ../../docker-compose.yml up -d
+	@$(DOCKER_BIN) compose --env-file ../../.env.local -f ../../docker-compose.yml up -d
 	@echo "Waiting for database to be healthy..."
-	@until [ "$$(docker inspect --format='{{.State.Health.Status}}' lotto-db 2>/dev/null)" = "healthy" ]; do \
+	@until [ "$$( $(DOCKER_BIN) inspect --format='{{.State.Health.Status}}' lotto-db 2>/dev/null )" = "healthy" ]; do \
 		sleep 0.5; \
 	done
 	@echo "Database is ready!"
 
 db-stop:
-	@docker compose -f ../../docker-compose.yml stop -t 2
+	@$(DOCKER_BIN) compose -f ../../docker-compose.yml stop -t 2
 
 # ── Migrations ───────────────────────────────────────────────────────────────
 
